@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>きゅうり収穫ゲーム</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(to bottom, #87CEEB, #98FB98);
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+        
+        h1 {
+            color: #2E8B57;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+        
+        .game-info {
+            display: flex;
+            gap: 30px;
+            margin-bottom: 20px;
+            font-size: 1.3em;
+            font-weight: bold;
+        }
+        
+        .info-item {
+            background: rgba(255,255,255,0.9);
+            padding: 10px 20px;
+            border-radius: 15px;
+            border: 3px solid #228B22;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        
+        canvas {
+            border: 5px solid #8B4513;
+            border-radius: 10px;
+            background: #90EE90;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+            cursor: pointer;
+        }
+        
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 15px;
+        }
+        
+        button {
+            padding: 15px 25px;
+            font-size: 1.2em;
+            background: #FF6347;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            transition: all 0.3s;
+        }
+        
+        button:hover {
+            background: #FF4500;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.3);
+        }
+        
+        .instructions {
+            max-width: 600px;
+            text-align: center;
+            margin-top: 20px;
+            background: rgba(255,255,255,0.9);
+            padding: 15px;
+            border-radius: 10px;
+            border: 2px solid #228B22;
+        }
+    </style>
+</head>
+<body>
+    <h1>🥒 きゅうり収穫ゲーム 🥒</h1>
+    
+    <div class="game-info">
+        <div class="info-item">
+            <span style="color: #FF6347;">スコア: </span>
+            <span id="score" style="color: #2E8B57;">0</span>
+        </div>
+        <div class="info-item">
+            <span style="color: #4169E1;">残り時間: </span>
+            <span id="timer" style="color: #2E8B57;">60</span>
+        </div>
+        <div class="info-item">
+            <span style="color: #8A2BE2;">レベル: </span>
+            <span id="level" style="color: #2E8B57;">1</span>
+        </div>
+    </div>
+    
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    
+    <div class="controls">
+        <button onclick="startGame()">ゲーム開始</button>
+        <button onclick="pauseGame()">一時停止</button>
+        <button onclick="resetGame()">リセット</button>
+    </div>
+    
+    <div class="instructions">
+        <p><strong>遊び方:</strong></p>
+        <p>🥒 畑に生えているきゅうりをクリックして収穫しよう！</p>
+        <p>⏰ 時間内にたくさん収穫してスコアを稼ごう！</p>
+        <p>⭐ スコアが上がるとレベルアップ！新しいきゅうりが早く育つよ！</p>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Game state
+        let score = 0;
+        let timeLeft = 60;
+        let level = 1;
+        let gameRunning = false;
+        let gameTimer = null;
+        let cucumbers = [];
+        
+        // Audio context for sound effects
+        let audioContext = null;
+        
+        // Initialize audio context
+        function initAudio() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+        
+        // Sound effect functions
+        function playHarvestSound() {
+            if (!audioContext) return;
+            
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            // Happy harvest sound
+            oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(1200, audioContext.currentTime + 0.1);
+            oscillator.frequency.exponentialRampToValueAtTime(600, audioContext.currentTime + 0.2);
+            
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+            
+            oscillator.type = 'triangle';
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.3);
+        }
+        
+        function playLevelUpSound() {
+            if (!audioContext) return;
+            
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            // Triumphant level up sound
+            const notes = [523, 659, 784, 1047]; // C, E, G, C
+            notes.forEach((freq, index) => {
+                const noteOsc = audioContext.createOscillator();
+                const noteGain = audioContext.createGain();
+                
+                noteOsc.connect(noteGain);
+                noteGain.connect(audioContext.destination);
+                
+                noteOsc.frequency.setValueAtTime(freq, audioContext.currentTime + index * 0.15);
+                noteGain.gain.setValueAtTime(0.2, audioContext.currentTime + index * 0.15);
+                noteGain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + index * 0.15 + 0.3);
+                
+                noteOsc.type = 'sine';
+                noteOsc.start(audioContext.currentTime + index * 0.15);
+                noteOsc.stop(audioContext.currentTime + index * 0.15 + 0.3);
+            });
+        }
+        
+        function playGameStartSound() {
+            if (!audioContext) return;
+            
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            // Cheerful start sound
+            oscillator.frequency.setValueAtTime(440, audioContext.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(880, audioContext.currentTime + 0.5);
+            
+            gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+            
+            oscillator.type = 'sawtooth';
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.5);
+        }
+        
+        function playGameOverSound() {
+            if (!audioContext) return;
+            
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            // Gentle game over sound
+            oscillator.frequency.setValueAtTime(440, audioContext.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(220, audioContext.currentTime + 1.0);
+            
+            gainNode.gain.setValueAtTime(0.15, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 1.0);
+            
+            oscillator.type = 'sine';
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 1.0);
+        }
+        
+        function playGrowSound() {
+            if (!audioContext) return;
+            
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            // Gentle growing sound
+            oscillator.frequency.setValueAtTime(200, audioContext.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(400, audioContext.currentTime + 0.3);
+            
+            gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+            
+            oscillator.type = 'sine';
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.3);
+        }
+        
+        // Cucumber class
+        class Cucumber {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.size = 0;
+                this.maxSize = 40 + Math.random() * 20;
+                this.growSpeed = 0.5 + (level * 0.2);
+                this.ready = false;
+                this.clicked = false;
+                this.color = this.getRandomGreen();
+            }
+            
+            getRandomGreen() {
+                const greens = ['#228B22', '#32CD32', '#00FF00', '#7CFC00', '#ADFF2F'];
+                return greens[Math.floor(Math.random() * greens.length)];
+            }
+            
+            update() {
+                if (!this.ready && !this.clicked) {
+                    this.size += this.growSpeed;
+                    if (this.size >= this.maxSize) {
+                        this.ready = true;
+                        playGrowSound(); // Play sound when cucumber is ready
+                    }
+                }
+            }
+            
+            draw() {
+                if (this.clicked) return;
+                
+                // Draw cucumber
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.ellipse(this.x, this.y, this.size * 0.3, this.size, 0, 0, 2 * Math.PI);
+                ctx.fill();
+                
+                // Draw stripes
+                if (this.size > 10) {
+                    ctx.strokeStyle = '#006400';
+                    ctx.lineWidth = 2;
+                    for (let i = 0; i < 3; i++) {
+                        ctx.beginPath();
+                        ctx.ellipse(this.x, this.y - this.size * 0.3 + (i * this.size * 0.3), 
+                                  this.size * 0.25, this.size * 0.1, 0, 0, 2 * Math.PI);
+                        ctx.stroke();
+                    }
+                }
+                
+                // Ready indicator
+                if (this.ready) {
+                    ctx.fillStyle = '#FFD700';
+                    ctx.font = '20px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('✨', this.x, this.y - this.size - 10);
+                }
+            }
+            
+            isClicked(mouseX, mouseY) {
+                const distance = Math.sqrt((mouseX - this.x) ** 2 + (mouseY - this.y) ** 2);
+                return distance < this.size && this.ready;
+            }
+            
+            harvest() {
+                if (this.ready && !this.clicked) {
+                    this.clicked = true;
+                    const points = Math.floor(this.maxSize / 10) * level;
+                    score += points;
+                    
+                    // Play harvest sound
+                    playHarvestSound();
+                    
+                    // Visual effect
+                    this.showHarvestEffect();
+                    
+                    return points;
+                }
+                return 0;
+            }
+            
+            showHarvestEffect() {
+                // Create floating text effect
+                const effect = {
+                    x: this.x,
+                    y: this.y,
+                    text: '+' + Math.floor(this.maxSize / 10) * level,
+                    life: 30,
+                    maxLife: 30
+                };
+                
+                const animateEffect = () => {
+                    if (effect.life > 0) {
+                        ctx.save();
+                        ctx.fillStyle = `rgba(255, 215, 0, ${effect.life / effect.maxLife})`;
+                        ctx.font = 'bold 24px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(effect.text, effect.x, effect.y - (effect.maxLife - effect.life) * 2);
+                        ctx.restore();
+                        effect.life--;
+                        if (effect.life > 0) {
+                            requestAnimationFrame(animateEffect);
+                        }
+                    }
+                };
+                animateEffect();
+            }
+        }
+        
+        // Initialize cucumbers
+        function initializeCucumbers() {
+            cucumbers = [];
+            const rows = 4;
+            const cols = 6;
+            const startX = 100;
+            const startY = 150;
+            const spacingX = 120;
+            const spacingY = 100;
+            
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    const x = startX + col * spacingX + (Math.random() - 0.5) * 40;
+                    const y = startY + row * spacingY + (Math.random() - 0.5) * 30;
+                    cucumbers.push(new Cucumber(x, y));
+                }
+            }
+        }
+        
+        // Draw background
+        function drawBackground() {
+            // Sky gradient
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, '#87CEEB');
+            gradient.addColorStop(0.7, '#98FB98');
+            gradient.addColorStop(1, '#90EE90');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw soil rows
+            ctx.fillStyle = '#8B4513';
+            for (let i = 0; i < 4; i++) {
+                const y = 130 + i * 100;
+                ctx.fillRect(50, y + 50, canvas.width - 100, 20);
+            }
+            
+            // Draw sun
+            ctx.fillStyle = '#FFD700';
+            ctx.beginPath();
+            ctx.arc(700, 80, 40, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // Sun rays
+            ctx.strokeStyle = '#FFD700';
+            ctx.lineWidth = 3;
+            for (let i = 0; i < 8; i++) {
+                const angle = (i * Math.PI) / 4;
+                const x1 = 700 + Math.cos(angle) * 50;
+                const y1 = 80 + Math.sin(angle) * 50;
+                const x2 = 700 + Math.cos(angle) * 65;
+                const y2 = 80 + Math.sin(angle) * 65;
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.stroke();
+            }
+            
+            // Draw clouds
+            drawCloud(150, 50);
+            drawCloud(450, 70);
+        }
+        
+        function drawCloud(x, y) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.beginPath();
+            ctx.arc(x, y, 25, 0, 2 * Math.PI);
+            ctx.arc(x + 25, y, 35, 0, 2 * Math.PI);
+            ctx.arc(x + 50, y, 25, 0, 2 * Math.PI);
+            ctx.arc(x + 15, y - 25, 25, 0, 2 * Math.PI);
+            ctx.arc(x + 35, y - 25, 30, 0, 2 * Math.PI);
+            ctx.fill();
+        }
+        
+        // Game loop
+        function gameLoop() {
+            if (!gameRunning) return;
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw background
+            drawBackground();
+            
+            // Update and draw cucumbers
+            cucumbers.forEach(cucumber => {
+                cucumber.update();
+                cucumber.draw();
+            });
+            
+            // Add new cucumbers occasionally
+            if (Math.random() < 0.005 * level) {
+                const emptySpots = cucumbers.filter(c => c.clicked);
+                if (emptySpots.length > 0) {
+                    const spot = emptySpots[Math.floor(Math.random() * emptySpots.length)];
+                    const newCucumber = new Cucumber(spot.x + (Math.random() - 0.5) * 50, spot.y + (Math.random() - 0.5) * 50);
+                    cucumbers[cucumbers.indexOf(spot)] = newCucumber;
+                }
+            }
+            
+            // Update UI
+            document.getElementById('score').textContent = score;
+            document.getElementById('timer').textContent = timeLeft;
+            document.getElementById('level').textContent = level;
+            
+            // Check level up
+            const newLevel = Math.floor(score / 100) + 1;
+            if (newLevel > level) {
+                level = newLevel;
+                playLevelUpSound(); // Play level up sound
+                // Show level up message
+                ctx.fillStyle = 'rgba(255, 215, 0, 0.9)';
+                ctx.font = 'bold 48px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('レベルアップ！', canvas.width / 2, canvas.height / 2);
+            }
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Mouse click handler
+        canvas.addEventListener('click', (event) => {
+            if (!gameRunning) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = event.clientX - rect.left;
+            const mouseY = event.clientY - rect.top;
+            
+            cucumbers.forEach(cucumber => {
+                if (cucumber.isClicked(mouseX, mouseY)) {
+                    const points = cucumber.harvest();
+                    // Sound effect is now handled in the harvest() method
+                }
+            });
+        });
+        
+        // Game control functions
+        function startGame() {
+            if (gameRunning) return;
+            
+            // Initialize audio on first user interaction
+            initAudio();
+            
+            gameRunning = true;
+            timeLeft = 60;
+            initializeCucumbers();
+            
+            // Play start sound
+            playGameStartSound();
+            
+            // Start timer
+            gameTimer = setInterval(() => {
+                timeLeft--;
+                if (timeLeft <= 0) {
+                    endGame();
+                }
+            }, 1000);
+            
+            gameLoop();
+        }
+        
+        function pauseGame() {
+            gameRunning = !gameRunning;
+            if (gameRunning) {
+                gameLoop();
+            }
+        }
+        
+        function resetGame() {
+            gameRunning = false;
+            if (gameTimer) {
+                clearInterval(gameTimer);
+            }
+            score = 0;
+            timeLeft = 60;
+            level = 1;
+            initializeCucumbers();
+            
+            // Clear canvas and draw initial state
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawBackground();
+            cucumbers.forEach(cucumber => cucumber.draw());
+            
+            // Update UI
+            document.getElementById('score').textContent = score;
+            document.getElementById('timer').textContent = timeLeft;
+            document.getElementById('level').textContent = level;
+        }
+        
+        function endGame() {
+            gameRunning = false;
+            if (gameTimer) {
+                clearInterval(gameTimer);
+            }
+            
+            // Play game over sound
+            playGameOverSound();
+            
+            // Show game over screen
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.fillStyle = '#FFD700';
+            ctx.font = 'bold 48px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('ゲーム終了！', canvas.width / 2, canvas.height / 2 - 50);
+            
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 32px Arial';
+            ctx.fillText(`最終スコア: ${score}`, canvas.width / 2, canvas.height / 2 + 10);
+            ctx.fillText(`レベル: ${level}`, canvas.width / 2, canvas.height / 2 + 50);
+            
+            ctx.font = '24px Arial';
+            ctx.fillText('また挑戦してね！', canvas.width / 2, canvas.height / 2 + 100);
+        }
+        
+        // Initialize the game
+        resetGame();
+    </script>
+</body>
+</html>
